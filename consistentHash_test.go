@@ -4,10 +4,12 @@ package consistentHash
 import (
 	"crypto/rand"
 	"fmt"
-	"github.com/GaryBoone/GoStats/stats"
-	"github.com/stretchr/testify/assert"
+	"runtime"
 	"strconv"
 	"testing"
+
+	"github.com/GaryBoone/GoStats/stats"
+	"github.com/stretchr/testify/assert"
 )
 
 var (
@@ -236,4 +238,88 @@ func Exampleremove() {
 		server, _ := ch.Get([]byte(key))
 		fmt.Printf("key=%s server=%s\n", key, server)
 	}
+}
+
+func bToMb(b uint64) uint64 {
+	return b / 1024 / 1024
+}
+
+func PrintMemUsage() {
+	var m runtime.MemStats
+	runtime.ReadMemStats(&m)
+	// For info on each, see: https://golang.org/pkg/runtime/#MemStats
+	fmt.Printf("Alloc = %v MiB", bToMb(m.Alloc))
+	fmt.Printf("\tTotalAlloc = %v MiB", bToMb(m.TotalAlloc))
+	fmt.Printf("\tSys = %v MiB", bToMb(m.Sys))
+	fmt.Printf("\tNumGC = %v\n", m.NumGC)
+}
+
+func TestSimpleHashRingMemoryUsage(t *testing.T) {
+	ch := New()
+	ch.Add("server1")
+	ch.Add("server2")
+	ch.Add("server3")
+	ch.Add("server4")
+	ch.Add("server4")
+	ch.Add("server6")
+	ch.Add("server7")
+
+	times := 100000000
+	PrintMemUsage()
+	for i := 0; i < times; i++ {
+		ch.Get([]byte(string(i)))
+	}
+	PrintMemUsage()
+	for i := 0; i < times; i++ {
+		ch.Get([]byte(string(i)))
+	}
+	PrintMemUsage()
+}
+
+func TestRemapping(t *testing.T) {
+	ch := New()
+	ch.SetVnodeCount(200)
+	ch.Add("s1")
+	ch.Add("s2")
+	ch.Add("s3")
+	ch.Add("s4")
+
+	times := 200
+	var results []string
+	for i := 0; i < times; i++ {
+		val, _ := ch.Get([]byte(string(i)))
+		results = append(results, fmt.Sprintf("%d : %s", i, val))
+	}
+
+	var changes int
+	for i := 0; i < times; i++ {
+		val, _ := ch.Get([]byte(string(i)))
+		newResult := fmt.Sprintf("%d : %s", i, val)
+		if newResult != results[i] {
+			fmt.Printf("%s -> %s\n", results[i], newResult)
+		}
+	}
+
+	ch2 := New()
+	ch2.AddWithNodeCount("s1", 200)
+	ch2.AddWithNodeCount("s2", 100)
+	ch2.AddWithNodeCount("s2b", 100)
+	ch2.AddWithNodeCount("s3", 200)
+	ch2.AddWithNodeCount("s4", 200)
+
+	for i := 0; i < times; i++ {
+		val, _ := ch2.Get([]byte(string(i)))
+		newResult := fmt.Sprintf("%d : %s", i, val)
+		if newResult != results[i] {
+			changes = changes + 1
+			fmt.Printf("%s -> %s\n", results[i], newResult)
+		}
+	}
+
+	fmt.Printf("%d mappings changed\n", changes)
+
+}
+
+func TestFeature(t *testing.T) {
+	Examplebasic()
 }

@@ -4,10 +4,11 @@ package consistentHash
 import (
 	"errors"
 	"fmt"
-	"github.com/spaolacci/murmur3"
 	"sort"
 	"strconv"
 	"sync"
+
+	"github.com/spaolacci/murmur3"
 )
 
 var (
@@ -39,6 +40,7 @@ type ConsistentHash struct {
 	nodes      map[string]bool
 	vnodeCount int
 	mutex      sync.Mutex
+	nodeCount  map[string]int
 }
 
 // New creates a new consistentHash pointer and initializes all the necessary fields
@@ -47,6 +49,7 @@ func New() *ConsistentHash {
 	ch.nodes = make(map[string]bool)
 	ch.vnodes = make(vnodes, 0)
 	ch.vnodeCount = DefaultVnodeCount
+	ch.nodeCount = make(map[string]int)
 	return ch
 }
 
@@ -76,8 +79,8 @@ func (ch *ConsistentHash) SetVnodeCount(count int) error {
 	return nil
 }
 
-// Add adds a server to the consistentHash
-func (ch *ConsistentHash) Add(address string) {
+//AddWithNodeCount adds a server to the consistentHash
+func (ch *ConsistentHash) AddWithNodeCount(address string, nodeCount int) {
 	ch.mutex.Lock()
 	defer ch.mutex.Unlock()
 	// if the address has already been added, there is no work to do
@@ -85,11 +88,17 @@ func (ch *ConsistentHash) Add(address string) {
 		return
 	}
 	ch.nodes[address] = true
-	for i := 0; i < ch.vnodeCount; i++ {
+	ch.nodeCount[address] = nodeCount
+	for i := 0; i < ch.nodeCount[address]; i++ {
 		token := murmur3.Sum64(addressToKey(address, i))
 		newVnode := vnode{token, address}
 		ch.insertVnode(newVnode)
 	}
+}
+
+// Add adds a server to the consistentHash
+func (ch *ConsistentHash) Add(address string) {
+	ch.AddWithNodeCount(address, ch.vnodeCount)
 }
 
 // Remove removes a server from the consistentHash
@@ -99,7 +108,7 @@ func (ch *ConsistentHash) Remove(address string) {
 	if _, found := ch.nodes[address]; !found {
 		return
 	}
-	for i := 0; i < ch.vnodeCount; i++ {
+	for i := 0; i < ch.nodeCount[address]; i++ {
 		token := murmur3.Sum64(addressToKey(address, i))
 		ch.removeVnode(token)
 	}
